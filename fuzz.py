@@ -93,7 +93,10 @@ class ChatMessage:
 
     def randomize(self):
         self.messageId = 0x84
-        self.chatMessage = random.getrandbits(32)
+        # Anything other than the enumerated values are rejected as of PR-290
+        #   so don't bother fuzzing random values for the chat message ID
+        # self.chatMessage = random.getrandbits(32)
+        self.chatMessage = random.choice([136,129,130,132,34,40,33,36,72,66,68,65,24,18,20,17])
         self.playerIdx = random.getrandbits(8)
 
     def to_buffer(self):
