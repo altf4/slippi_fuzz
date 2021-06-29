@@ -38,11 +38,27 @@ class Pad:
         # Then contains N pads (each 8 bytes)
         self.pads = [0x0000000000000000]
 
+    def to_buffer(self):
+        paramlist = []
+        paramlist.append((self.messageId).to_bytes(1, byteorder='big'))
+        paramlist.append((self.frame).to_bytes(4, byteorder='big', signed=True))
+        paramlist.append((self.playerIdx).to_bytes(1, byteorder='big'))
+        for pad in self.pads:
+            paramlist.append((pad).to_bytes(8, byteorder='big'))
+        return b"".join(paramlist)
+
 class PadAck:
     def __init__(self):
         self.messageId = 0x81
         self.frame = 0x00000000
         self.playerIdx = 0x00
+
+    def to_buffer(self):
+        paramlist = []
+        paramlist.append((self.messageId).to_bytes(1, byteorder='big'))
+        paramlist.append((self.frame).to_bytes(4, byteorder='big', signed=True))
+        paramlist.append((self.playerIdx).to_bytes(1, byteorder='big'))
+        return b"".join(paramlist)
 
 class PlayerSelections:
     def __init__(self):
@@ -158,27 +174,81 @@ host = enet.Host(enet.Address(b"0.0.0.0", int(our_port)), 1, 0, 0)
 peer = host.connect(enet.Address(bytes(opponent_ip, 'utf-8'), int(opponent_port)), 1)
 
 # Wait for match with opponent
-connected = False
-wait_time = 2000
 while True:
-    if connected:
-        wait_time = 50
-    event = host.service(wait_time)
-    event_type = event.type
-
-    if connected:
-        chat = ChatMessage()
-        chat.randomize()
-        peer.send(0, enet.Packet(chat.to_buffer()))
-
+    event = host.service(2000)
     if event.type == enet.EVENT_TYPE_NONE:
         pass
     elif event.type == enet.EVENT_TYPE_RECEIVE:
-        print("Data")
+        pass
     elif event.type == enet.EVENT_TYPE_CONNECT:
         print("Connected to opponent!")
-        print("Fuzzing messages...")
-        connected = True
+        break
     elif event.type == enet.EVENT_TYPE_DISCONNECT:
         print("Disconnecting")
-        connected = False
+        sys.exit(1)
+
+# We are finally connected to our opponent.
+# Now we get to the actual fuzzing.
+print("Fuzzing will now start!")
+
+###### STEP ONE: Chat messages at CSS #######
+#   1000 randomized chat messages fast
+sent_messages = 0
+while sent_messages < 1000:
+    chat = ChatMessage()
+    chat.randomize()
+    peer.send(0, enet.Packet(chat.to_buffer()))
+    sent_messages += 1
+
+    event = host.service(50)
+    if event.type == enet.EVENT_TYPE_NONE:
+        pass
+    elif event.type == enet.EVENT_TYPE_RECEIVE:
+        pass
+    elif event.type == enet.EVENT_TYPE_CONNECT:
+        break
+    elif event.type == enet.EVENT_TYPE_DISCONNECT:
+        print("Disconnecting")
+        sys.exit(1)
+
+###### STEP TWO: Out of order messages during game #######
+# Send some normal selections, to start the game
+selections = PlayerSelections()
+peer.send(0, enet.Packet(selections.to_buffer()))
+
+previous_time = time.time() * 1000
+
+sent_messages = 0
+current_frame = -123
+while True:
+    chat = ChatMessage()
+    chat.randomize()
+    peer.send(0, enet.Packet(chat.to_buffer()))
+    sent_messages += 1
+
+    # Send the pad if it's time
+    current_time = time.time() * 1000
+    if abs(previous_time - current_time) > 16.6666:
+        pad = Pad()
+        pad.frame = current_frame
+        print("Sending pad frame", current_frame)
+        current_frame += 1
+        peer.send(0, enet.Packet(pad.to_buffer()))
+        previous_time = current_time
+
+    event = host.service(5)
+    if event.type == enet.EVENT_TYPE_NONE:
+        pass
+    elif event.type == enet.EVENT_TYPE_RECEIVE:
+        # We need to ack pads that come in. Do that here
+        frame = int.from_bytes(event.packet.data[1:5], byteorder='big', signed=True)
+        pad_ack = PadAck()
+        pad_ack.frame = frame
+        print("Got pad for: ", frame)
+        peer.send(0, enet.Packet(pad_ack.to_buffer()))
+
+    elif event.type == enet.EVENT_TYPE_CONNECT:
+        break
+    elif event.type == enet.EVENT_TYPE_DISCONNECT:
+        print("Disconnecting")
+        sys.exit(1)
