@@ -31,12 +31,22 @@ print("using seed: ", seed)
 random.seed(seed)
 
 class Pad:
-    def __init__(self):
+    def __init__(self, frame):
         self.messageId = 0x80
-        self.frame = 0x00000000
+        self.frame = frame
         self.playerIdx = 0x00
         # Then contains N pads (each 8 bytes)
-        self.pads = [0x0000000000000000]
+        if self.frame < 200:
+            # Neutral
+            self.pads = [0x0000007F7F7F0000]
+        else:
+            # Dash dance
+            if self.frame % 2:
+                print("left")
+                self.pads = [0x0000607F7F7F0000]
+            else:
+                print("right")
+                self.pads = [0x00009F7F7F7F0000]
 
     def to_buffer(self):
         paramlist = []
@@ -97,9 +107,15 @@ class PlayerSelections:
         return b"".join(paramlist)
 
 class ConnSelected:
+    """Currently unused by Slippi, but it's a valid message type that DOES get read"""
     def __init__(self):
         self.messageId = 0x83
         # No other fields
+
+    def to_buffer(self):
+        paramlist = []
+        paramlist.append((self.messageId).to_bytes(1, byteorder='big'))
+        return b"".join(paramlist)
 
 class ChatMessage:
     def __init__(self):
@@ -177,6 +193,7 @@ peer = host.connect(enet.Address(bytes(opponent_ip, 'utf-8'), int(opponent_port)
 while True:
     event = host.service(2000)
     if event.type == enet.EVENT_TYPE_NONE:
+        print("Reaching out to opponent...")
         pass
     elif event.type == enet.EVENT_TYPE_RECEIVE:
         pass
@@ -193,44 +210,41 @@ print("Fuzzing will now start!")
 
 ###### STEP ONE: Chat messages at CSS #######
 #   1000 randomized chat messages fast
-sent_messages = 0
-while sent_messages < 1000:
-    chat = ChatMessage()
-    chat.randomize()
-    peer.send(0, enet.Packet(chat.to_buffer()))
-    sent_messages += 1
-
-    event = host.service(50)
-    if event.type == enet.EVENT_TYPE_NONE:
-        pass
-    elif event.type == enet.EVENT_TYPE_RECEIVE:
-        pass
-    elif event.type == enet.EVENT_TYPE_CONNECT:
-        break
-    elif event.type == enet.EVENT_TYPE_DISCONNECT:
-        print("Disconnecting")
-        sys.exit(1)
+print("Step One: Chat messages")
+# sent_messages = 0
+# while sent_messages < 1000:
+#     chat = ChatMessage()
+#     chat.randomize()
+#     peer.send(0, enet.Packet(chat.to_buffer()))
+#     sent_messages += 1
+#
+#     event = host.service(50)
+#     if event.type == enet.EVENT_TYPE_NONE:
+#         pass
+#     elif event.type == enet.EVENT_TYPE_RECEIVE:
+#         pass
+#     elif event.type == enet.EVENT_TYPE_CONNECT:
+#         break
+#     elif event.type == enet.EVENT_TYPE_DISCONNECT:
+#         print("Disconnecting")
+#         sys.exit(1)
 
 ###### STEP TWO: Out of order messages during game #######
 # Send some normal selections, to start the game
+print("Step Two: In-game")
 selections = PlayerSelections()
 peer.send(0, enet.Packet(selections.to_buffer()))
 
 previous_time = time.time() * 1000
 
-sent_messages = 0
 current_frame = -123
+start_pads = False
 while True:
-    chat = ChatMessage()
-    chat.randomize()
-    peer.send(0, enet.Packet(chat.to_buffer()))
-    sent_messages += 1
 
     # Send the pad if it's time
     current_time = time.time() * 1000
-    if abs(previous_time - current_time) > 16.6666:
-        pad = Pad()
-        pad.frame = current_frame
+    if abs(previous_time - current_time) > 16.6666 and start_pads:
+        pad = Pad(current_frame)
         print("Sending pad frame", current_frame)
         current_frame += 1
         peer.send(0, enet.Packet(pad.to_buffer()))
@@ -240,12 +254,26 @@ while True:
     if event.type == enet.EVENT_TYPE_NONE:
         pass
     elif event.type == enet.EVENT_TYPE_RECEIVE:
-        # We need to ack pads that come in. Do that here
-        frame = int.from_bytes(event.packet.data[1:5], byteorder='big', signed=True)
-        pad_ack = PadAck()
-        pad_ack.frame = frame
-        print("Got pad for: ", frame)
-        peer.send(0, enet.Packet(pad_ack.to_buffer()))
+        messageId = int.from_bytes(event.packet.data[0:1], byteorder='big', signed=False)
+        print("Got message with ID: ", messageId)
+        print("\npayload:", event.packet.data)
+        # Pad
+        if messageId == 0x80:
+            # We need to ack pads that come in. Do that here
+            frame = int.from_bytes(event.packet.data[1:5], byteorder='big', signed=True)
+            pad_ack = PadAck()
+            pad_ack.frame = frame
+            print("Got pad for: ", frame)
+            peer.send(0, enet.Packet(pad_ack.to_buffer()))
+            start_pads = True
+        # PlayerSelections
+        if messageId == 0x82:
+            pad = Pad(-123)
+            print("Sending pad frame", current_frame)
+            current_frame += 1
+            peer.send(0, enet.Packet(pad.to_buffer()))
+            previous_time = current_time
+            start_pads = True
 
     elif event.type == enet.EVENT_TYPE_CONNECT:
         break
