@@ -149,7 +149,7 @@ if event.type == enet.EVENT_TYPE_CONNECT:
     request["type"] = "create-ticket"
     request["user"] = {"uid": user_json["uid"], "playKey": user_json["playKey"]}
     request["search"] = {"mode": 2, "connectCode": [ord(s) for s in args.opponent]}
-    request["appVersion"] = "2.3.1"
+    request["appVersion"] = "2.3.3"
     peer.send(0, enet.Packet(bytes(json.dumps(request), 'utf-8')))
 else:
     print("Failed to get ticket from MM server")
@@ -211,23 +211,23 @@ print("Fuzzing will now start!")
 ###### STEP ONE: Chat messages at CSS #######
 #   1000 randomized chat messages fast
 print("Step One: Chat messages")
-# sent_messages = 0
-# while sent_messages < 1000:
-#     chat = ChatMessage()
-#     chat.randomize()
-#     peer.send(0, enet.Packet(chat.to_buffer()))
-#     sent_messages += 1
-#
-#     event = host.service(50)
-#     if event.type == enet.EVENT_TYPE_NONE:
-#         pass
-#     elif event.type == enet.EVENT_TYPE_RECEIVE:
-#         pass
-#     elif event.type == enet.EVENT_TYPE_CONNECT:
-#         break
-#     elif event.type == enet.EVENT_TYPE_DISCONNECT:
-#         print("Disconnecting")
-#         sys.exit(1)
+sent_messages = 0
+while sent_messages < 10000:
+    chat = ChatMessage()
+    chat.randomize()
+    peer.send(0, enet.Packet(chat.to_buffer()))
+    sent_messages += 1
+
+    event = host.service(50)
+    if event.type == enet.EVENT_TYPE_NONE:
+        pass
+    elif event.type == enet.EVENT_TYPE_RECEIVE:
+        pass
+    elif event.type == enet.EVENT_TYPE_CONNECT:
+        break
+    elif event.type == enet.EVENT_TYPE_DISCONNECT:
+        print("Disconnecting")
+        sys.exit(1)
 
 ###### STEP TWO: Out of order messages during game #######
 # Send some normal selections, to start the game
