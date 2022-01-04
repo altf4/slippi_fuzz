@@ -42,10 +42,8 @@ class Pad:
         else:
             # Dash dance
             if self.frame % 2:
-                print("left")
                 self.pads = [0x0000607F7F7F0000]
             else:
-                print("right")
                 self.pads = [0x00009F7F7F7F0000]
 
     def to_buffer(self):
@@ -149,7 +147,7 @@ if event.type == enet.EVENT_TYPE_CONNECT:
     request["type"] = "create-ticket"
     request["user"] = {"uid": user_json["uid"], "playKey": user_json["playKey"]}
     request["search"] = {"mode": 2, "connectCode": [ord(s) for s in args.opponent]}
-    request["appVersion"] = "2.3.1"
+    request["appVersion"] = "2.3.3"
     peer.send(0, enet.Packet(bytes(json.dumps(request), 'utf-8')))
 else:
     print("Failed to get ticket from MM server")
@@ -240,10 +238,11 @@ previous_time = time.time() * 1000
 current_frame = -123
 start_pads = False
 while True:
-
     # Send the pad if it's time
     current_time = time.time() * 1000
     if abs(previous_time - current_time) > 16.6666 and start_pads:
+        if current_frame == 300:
+            current_frame = 2147483640
         pad = Pad(current_frame)
         print("Sending pad frame", current_frame)
         current_frame += 1
@@ -269,7 +268,6 @@ while True:
         # PlayerSelections
         if messageId == 0x82:
             pad = Pad(-123)
-            print("Sending pad frame", current_frame)
             current_frame += 1
             peer.send(0, enet.Packet(pad.to_buffer()))
             previous_time = current_time
